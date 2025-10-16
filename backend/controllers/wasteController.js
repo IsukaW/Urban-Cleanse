@@ -120,15 +120,25 @@ const createWasteRequest = async (req, res) => {
       binId,
       collectionType,
       preferredDate,
+      preferredTimeSlot,
       notes,
       address
     } = req.body;
 
     // Validate required fields
-    if (!binId || !collectionType || !preferredDate) {
+    if (!binId || !collectionType || !preferredDate || !preferredTimeSlot) {
       return res.status(400).json({
         success: false,
-        message: 'Bin ID, collection type, and preferred date are required'
+        message: 'Bin ID, collection type, preferred date, and preferred time slot are required'
+      });
+    }
+
+    // Validate time slot
+    const validTimeSlots = ['08:00-10:00', '10:00-12:00', '12:00-14:00', '14:00-16:00', '16:00-18:00'];
+    if (!validTimeSlots.includes(preferredTimeSlot)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid preferred time slot. Valid slots are: ' + validTimeSlots.join(', ')
       });
     }
 
@@ -259,6 +269,7 @@ const createWasteRequest = async (req, res) => {
       binId,
       collectionType,
       preferredDate: requestedDate,
+      preferredTimeSlot,
       cost,
       paymentStatus: 'pending',
       status: 'pending',
@@ -527,13 +538,14 @@ const getAllRequests = async (req, res) => {
 // @access  Private/Admin
 const updateRequestStatus = async (req, res) => {
   try {
-    const { status, notes, assignedWorkerId, scheduledDate } = req.body;
+    const { status, notes, assignedWorkerId, scheduledDate, scheduledTimeSlot } = req.body;
     const requestId = req.params.id;
 
     console.log(`[UPDATE_REQUEST] Updating request ${requestId} with:`, {
       status,
       assignedWorkerId,
       scheduledDate,
+      scheduledTimeSlot,
       adminId: req.user._id
     });
 
@@ -595,6 +607,22 @@ const updateRequestStatus = async (req, res) => {
         });
       }
 
+      if (!scheduledTimeSlot) {
+        return res.status(400).json({
+          success: false,
+          message: 'Scheduled time slot is required for approval'
+        });
+      }
+
+      // Validate time slot
+      const validTimeSlots = ['08:00-10:00', '10:00-12:00', '12:00-14:00', '14:00-16:00', '16:00-18:00'];
+      if (!validTimeSlots.includes(scheduledTimeSlot)) {
+        return res.status(400).json({
+          success: false,
+          message: 'Invalid time slot. Valid slots are: ' + validTimeSlots.join(', ')
+        });
+      }
+
       // Validate scheduled date - allow today and future dates
       const schedDate = new Date(scheduledDate);
       if (isNaN(schedDate.getTime())) {
@@ -630,6 +658,30 @@ const updateRequestStatus = async (req, res) => {
         });
       }
 
+      // Check if worker is already assigned to another request on the same scheduled date and time slot
+      const startOfDay = new Date(schedDate);
+      startOfDay.setHours(0, 0, 0, 0);
+      const endOfDay = new Date(schedDate);
+      endOfDay.setHours(23, 59, 59, 999);
+
+      const conflictingAssignment = await WasteRequest.findOne({
+        assignedWorker: assignedWorkerId,
+        scheduledDate: {
+          $gte: startOfDay,
+          $lt: endOfDay
+        },
+        scheduledTimeSlot: scheduledTimeSlot, // Check for same time slot
+        status: { $in: ['approved', 'completed'] },
+        _id: { $ne: wasteRequest._id } // Exclude current request if updating
+      }).populate('userId', 'name');
+
+      if (conflictingAssignment) {
+        return res.status(409).json({
+          success: false,
+          message: `Worker ${worker.name} is already assigned to another collection on ${schedDate.toDateString()} at time slot ${scheduledTimeSlot}. Conflicting request: ${conflictingAssignment.requestId} for customer ${conflictingAssignment.userId.name}. Please choose a different worker, date, or time slot.`
+        });
+      }
+
       try {
         // Log the state before assignment
         console.log(`[MANUAL_APPROVAL] Before assignment - Request ${wasteRequest.requestId} state:`, {
@@ -646,11 +698,12 @@ const updateRequestStatus = async (req, res) => {
         wasteRequest.assignedAt = new Date();
         wasteRequest.assignedBy = req.user._id;
         wasteRequest.scheduledDate = schedDate;
+        wasteRequest.scheduledTimeSlot = scheduledTimeSlot; // Set the scheduled time slot
         wasteRequest.routeId = routeId; // Set the route ID
         
         console.log(`[MANUAL_APPROVAL] After assignment - Request ${wasteRequest.requestId} assigned to route ${routeId}`);
         
-        const assignmentNote = `Manually assigned to ${worker.name} (${worker.role.toUpperCase()}) for collection on ${schedDate.toDateString()}`;
+        const assignmentNote = `Manually assigned to ${worker.name} (${worker.role.toUpperCase()}) for collection on ${schedDate.toDateString()} at ${scheduledTimeSlot}`;
         wasteRequest.notes = wasteRequest.notes ? `${wasteRequest.notes}\n\n${assignmentNote}` : assignmentNote;
         
         // Update bin status to indicate collection is scheduled
@@ -717,6 +770,7 @@ const updateRequestStatus = async (req, res) => {
         wasteRequest.assignedAt = null;
         wasteRequest.assignedBy = null;
         wasteRequest.scheduledDate = null;
+        wasteRequest.scheduledTimeSlot = null;
         wasteRequest.routeId = null;
         
         const resetNote = `Status reset to pending by admin. Previous assignment cleared.`;
@@ -764,6 +818,7 @@ const updateRequestStatus = async (req, res) => {
         wasteRequest.assignedAt = null;
         wasteRequest.assignedBy = null;
         wasteRequest.scheduledDate = null;
+        wasteRequest.scheduledTimeSlot = null;
         wasteRequest.routeId = null;
         
         const cancelNote = `Request cancelled by admin. Assignment cleared.`;
@@ -944,7 +999,7 @@ const getAdminStats = async (req, res) => {
 // @access  Private/Admin
 const getAvailableWorkers = async (req, res) => {
   try {
-    const { date } = req.query;
+    const { date, requestId, timeSlot } = req.query;
     const assignmentDate = date ? new Date(date) : new Date();
     assignmentDate.setHours(0, 0, 0, 0);
     const nextDay = new Date(assignmentDate);
@@ -959,7 +1014,7 @@ const getAvailableWorkers = async (req, res) => {
       isActive: true
     }).select('_id name role email');
 
-    // Get workload for each worker
+    // Get workload and assignment details for each worker
     const workersWithLoad = await Promise.all(
       workers.map(async (worker) => {
         const routeCount = await Route.countDocuments({
@@ -970,32 +1025,125 @@ const getAvailableWorkers = async (req, res) => {
           }
         });
 
-        const assignedRequests = await WasteRequest.countDocuments({
+        // Check for existing assignments on the scheduled date
+        const assignmentQuery = {
           assignedWorker: worker._id,
-          preferredDate: {
+          scheduledDate: {
             $gte: assignmentDate,
             $lt: nextDay
           },
           status: { $in: ['approved', 'completed'] }
+        };
+
+        // Exclude current request if updating existing assignment
+        if (requestId) {
+          assignmentQuery.requestId = { $ne: requestId };
+        }
+
+        const assignedRequests = await WasteRequest.find(assignmentQuery)
+          .populate('userId', 'name')
+          .select('requestId scheduledDate scheduledTimeSlot collectionType userId');
+
+        // Check for time slot conflicts if a specific time slot is provided
+        let timeSlotConflict = null;
+        const timeSlotAssignments = [];
+        
+        if (timeSlot) {
+          timeSlotConflict = assignedRequests.find(req => req.scheduledTimeSlot === timeSlot);
+        }
+
+        // Group assignments by time slot
+        const timeSlotMap = {};
+        assignedRequests.forEach(req => {
+          const slot = req.scheduledTimeSlot || 'unassigned';
+          if (!timeSlotMap[slot]) {
+            timeSlotMap[slot] = [];
+          }
+          timeSlotMap[slot].push(req);
         });
+
+        const assignedCount = assignedRequests.length;
+        const totalLoad = routeCount + assignedCount;
+
+        // Determine availability based on time slot conflicts
+        let availability = 'available';
+        let conflictInfo = null;
+
+        if (timeSlot && timeSlotConflict) {
+          // Worker is already assigned to this specific time slot
+          availability = 'not available';
+          conflictInfo = {
+            type: 'time_slot_conflict',
+            conflictingRequest: timeSlotConflict.requestId,
+            customerName: timeSlotConflict.userId.name,
+            collectionType: timeSlotConflict.collectionType,
+            scheduledDate: timeSlotConflict.scheduledDate,
+            timeSlot: timeSlotConflict.scheduledTimeSlot
+          };
+        } else if (assignedCount >= 5) {
+          // Worker has too many assignments for the day (max 5 per day, one per time slot)
+          availability = 'busy';
+          conflictInfo = {
+            type: 'daily_limit',
+            assignedCount,
+            maxDaily: 5
+          };
+        }
+
+        // Get available time slots for this worker on this date
+        const allTimeSlots = ['08:00-10:00', '10:00-12:00', '12:00-14:00', '14:00-16:00', '16:00-18:00'];
+        const occupiedSlots = assignedRequests.map(req => req.scheduledTimeSlot).filter(slot => slot);
+        const availableTimeSlots = allTimeSlots.filter(slot => !occupiedSlots.includes(slot));
 
         return {
           ...worker.toObject(),
-          currentLoad: routeCount + assignedRequests,
-          availability: routeCount + assignedRequests < 10 ? 'available' : 'busy'
+          currentLoad: totalLoad,
+          availability,
+          assignedRequests: assignedCount,
+          conflictInfo,
+          timeSlotAssignments: Object.keys(timeSlotMap).map(slot => ({
+            timeSlot: slot,
+            requests: timeSlotMap[slot].map(req => ({
+              requestId: req.requestId,
+              customerName: req.userId.name,
+              collectionType: req.collectionType
+            }))
+          })),
+          availableTimeSlots,
+          occupiedTimeSlots: occupiedSlots,
+          maxDailyCapacity: 5,
+          remainingCapacity: Math.max(0, 5 - assignedCount)
         };
       })
     );
+
+    // Sort workers - available first, then by load
+    workersWithLoad.sort((a, b) => {
+      if (a.availability === 'available' && b.availability !== 'available') return -1;
+      if (b.availability === 'available' && a.availability !== 'available') return 1;
+      return a.currentLoad - b.currentLoad;
+    });
 
     res.json({
       success: true,
       count: workersWithLoad.length,
       data: {
         workers: workersWithLoad,
-        date: assignmentDate.toISOString()
+        date: assignmentDate.toISOString(),
+        timeSlot: timeSlot || null,
+        availableTimeSlots: ['08:00-10:00', '10:00-12:00', '12:00-14:00', '14:00-16:00', '16:00-18:00'],
+        summary: {
+          totalWorkers: workersWithLoad.length,
+          availableWorkers: workersWithLoad.filter(w => w.availability === 'available').length,
+          busyWorkers: workersWithLoad.filter(w => w.availability === 'busy').length,
+          unavailableWorkers: workersWithLoad.filter(w => w.availability === 'not available').length,
+          dateFormatted: assignmentDate.toDateString(),
+          timeSlotRequested: timeSlot || 'any'
+        }
       }
     });
   } catch (error) {
+    console.error('[GET_WORKERS] Error fetching available workers:', error);
     res.status(500).json({
       success: false,
       message: 'Failed to fetch available workers',

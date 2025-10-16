@@ -1,5 +1,4 @@
 import React, { useState, useEffect } from 'react';
-import { useAuth } from '../../contexts/AuthContext';
 
 interface Worker {
   _id: string;
@@ -8,6 +7,35 @@ interface Worker {
   email: string;
   currentLoad: number;
   availability: string;
+  assignedRequests?: number;
+  conflictInfo?: {
+    type?: string;
+    conflictingRequest?: string;
+    customerName?: string;
+    collectionType?: string;
+    scheduledDate?: string;
+    timeSlot?: string;
+    assignedCount?: number;
+    maxDaily?: number;
+  };
+  timeSlotAssignments?: Array<{
+    timeSlot: string;
+    requests: Array<{
+      requestId: string;
+      customerName: string;
+      collectionType: string;
+    }>;
+  }>;
+  availableTimeSlots?: string[];
+  occupiedTimeSlots?: string[];
+  maxDailyCapacity?: number;
+  remainingCapacity?: number;
+  assignmentDetails?: Array<{
+    requestId: string;
+    customerName: string;
+    collectionType: string;
+    scheduledDate: string;
+  }>;
 }
 
 interface WasteRequest {
@@ -20,6 +48,7 @@ interface WasteRequest {
   binId: string;
   collectionType: string;
   preferredDate: string;
+  preferredTimeSlot?: string;
   status: string;
   cost: number;
   paymentStatus: string;
@@ -32,10 +61,10 @@ interface WasteRequest {
     role: string;
   };
   scheduledDate?: string;
+  scheduledTimeSlot?: string;
 }
 
 const AdminRequests: React.FC = () => {
-  const { user } = useAuth();
   const [requests, setRequests] = useState<WasteRequest[]>([]);
   const [workers, setWorkers] = useState<Worker[]>([]);
   const [loading, setLoading] = useState(true);
@@ -60,7 +89,8 @@ const AdminRequests: React.FC = () => {
     status: '',
     notes: '',
     assignedWorkerId: '',
-    scheduledDate: ''
+    scheduledDate: '',
+    scheduledTimeSlot: ''
   });
 
   useEffect(() => {
@@ -164,10 +194,25 @@ const AdminRequests: React.FC = () => {
     }
   };
 
-  const fetchWorkers = async () => {
+  const fetchWorkers = async (scheduledDate?: string, requestId?: string, timeSlot?: string) => {
     try {
       const token = localStorage.getItem('token');
-      const response = await fetch('/api/waste/admin/workers', {
+      
+      // Build query parameters
+      const queryParams = new URLSearchParams();
+      if (scheduledDate) {
+        queryParams.append('date', scheduledDate);
+      }
+      if (requestId) {
+        queryParams.append('requestId', requestId);
+      }
+      if (timeSlot) {
+        queryParams.append('timeSlot', timeSlot);
+      }
+      
+      const url = `/api/waste/admin/workers${queryParams.toString() ? `?${queryParams.toString()}` : ''}`;
+      
+      const response = await fetch(url, {
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
@@ -177,6 +222,12 @@ const AdminRequests: React.FC = () => {
       if (response.ok) {
         const data = await response.json();
         setWorkers(data.data.workers);
+        
+        // Show availability summary
+        if (data.data.summary && scheduledDate) {
+          const { availableWorkers, unavailableWorkers, busyWorkers, timeSlotRequested } = data.data.summary;
+          console.log(`Worker availability for ${data.data.summary.dateFormatted} ${timeSlotRequested !== 'any' ? `at ${timeSlotRequested}` : ''}: ${availableWorkers} available, ${busyWorkers} busy, ${unavailableWorkers} unavailable`);
+        }
       } else {
         addNotification('warning', 'Failed to fetch worker data');
       }
@@ -188,24 +239,35 @@ const AdminRequests: React.FC = () => {
 
   const handleEditRequest = (request: WasteRequest) => {
     setSelectedRequest(request);
+    const scheduledDate = request.scheduledDate ? new Date(request.scheduledDate).toISOString().split('T')[0] : '';
     setFormData({
       status: request.status,
       notes: '',
       assignedWorkerId: request.assignedWorker?._id || '',
-      scheduledDate: request.scheduledDate ? new Date(request.scheduledDate).toISOString().split('T')[0] : ''
+      scheduledDate,
+      scheduledTimeSlot: request.scheduledTimeSlot || ''
     });
     setShowModal(true);
+    
+    // Fetch workers for the scheduled date, passing request ID to exclude current assignment
+    const dateToUse = scheduledDate || new Date(request.preferredDate).toISOString().split('T')[0];
+    fetchWorkers(dateToUse, request.requestId);
   };
 
   const handleApproveRequest = (request: WasteRequest) => {
     setSelectedRequest(request);
+    const scheduledDate = new Date(request.preferredDate).toISOString().split('T')[0];
     setFormData({
       status: 'approved',
       notes: '',
       assignedWorkerId: '',
-      scheduledDate: new Date(request.preferredDate).toISOString().split('T')[0]
+      scheduledDate,
+      scheduledTimeSlot: '08:00-10:00' // Default to first time slot
     });
     setShowModal(true);
+    
+    // Fetch workers for the preferred date
+    fetchWorkers(scheduledDate);
   };
 
   const handleSubmit = async () => {
@@ -221,6 +283,10 @@ const AdminRequests: React.FC = () => {
         addNotification('error', 'Please select a scheduled date for approval');
         return;
       }
+      if (!formData.scheduledTimeSlot) {
+        addNotification('error', 'Please select a time slot for approval');
+        return;
+      }
     }
 
     try {
@@ -232,10 +298,11 @@ const AdminRequests: React.FC = () => {
         notes: formData.notes
       };
       
-      // Only include worker and date for approval
+      // Only include worker, date, and time slot for approval
       if (formData.status === 'approved') {
         requestBody.assignedWorkerId = formData.assignedWorkerId;
         requestBody.scheduledDate = formData.scheduledDate;
+        requestBody.scheduledTimeSlot = formData.scheduledTimeSlot;
       }
       
       console.log('Submitting update request with body:', requestBody);
@@ -298,7 +365,8 @@ const AdminRequests: React.FC = () => {
       status: '',
       notes: '',
       assignedWorkerId: '',
-      scheduledDate: ''
+      scheduledDate: '',
+      scheduledTimeSlot: ''
     });
   };
 
@@ -553,6 +621,11 @@ const AdminRequests: React.FC = () => {
                         {request.scheduledDate && (
                           <div className="text-xs text-blue-600 mt-1">
                             Scheduled: {new Date(request.scheduledDate).toLocaleDateString()}
+                            {request.scheduledTimeSlot && (
+                              <span className="ml-1 text-xs bg-blue-100 text-blue-800 px-1 rounded">
+                                {request.scheduledTimeSlot}
+                              </span>
+                            )}
                           </div>
                         )}
                       </div>
@@ -639,38 +712,94 @@ const AdminRequests: React.FC = () => {
                           No workers available. Please try again later.
                         </div>
                       ) : (
-                        workers.map((worker) => (
-                          <div
-                            key={worker._id}
-                            className={`p-3 border rounded cursor-pointer transition-colors ${
-                              formData.assignedWorkerId === worker._id
-                                ? 'border-blue-500 bg-blue-50'
-                                : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
-                            }`}
-                            onClick={() => setFormData({...formData, assignedWorkerId: worker._id})}
-                          >
-                            <div className="flex justify-between items-center">
-                              <div>
-                                <div className="font-medium text-gray-900">{worker.name}</div>
-                                <div className="text-sm text-gray-500">
-                                  {worker.role.toUpperCase()} • {worker.email}
+                        workers.map((worker) => {
+                          const isNotAvailable = worker.availability === 'not available';
+                          const isBusy = worker.availability === 'busy';
+                          const isDisabled = isNotAvailable || isBusy;
+                          
+                          return (
+                            <div
+                              key={worker._id}
+                              className={`p-3 border rounded transition-colors ${
+                                isDisabled
+                                  ? 'border-red-200 bg-red-50 opacity-60 cursor-not-allowed'
+                                  : formData.assignedWorkerId === worker._id
+                                    ? 'border-blue-500 bg-blue-50 cursor-pointer'
+                                    : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50 cursor-pointer'
+                              }`}
+                              onClick={() => {
+                                if (!isDisabled) {
+                                  setFormData({...formData, assignedWorkerId: worker._id});
+                                }
+                              }}
+                            >
+                              <div className="flex justify-between items-center">
+                                <div className="flex-1">
+                                  <div className="font-medium text-gray-900">{worker.name}</div>
+                                  <div className="text-sm text-gray-500">
+                                    {worker.role.toUpperCase()} • {worker.email}
+                                  </div>
+                                  
+                                  {/* Show conflict information */}
+                                  {worker.conflictInfo && worker.conflictInfo.type === 'time_slot_conflict' && (
+                                    <div className="text-xs text-red-600 mt-1 bg-red-50 p-1 rounded">
+                                      ⚠️ Time slot conflict: {worker.conflictInfo.timeSlot}
+                                      <br />Request: {worker.conflictInfo.conflictingRequest}
+                                      <br />Customer: {worker.conflictInfo.customerName}
+                                    </div>
+                                  )}
+                                  
+                                  {worker.conflictInfo && worker.conflictInfo.type === 'daily_limit' && (
+                                    <div className="text-xs text-orange-600 mt-1 bg-orange-50 p-1 rounded">
+                                      ⚠️ Daily limit reached: {worker.conflictInfo.assignedCount}/{worker.conflictInfo.maxDaily} assignments
+                                    </div>
+                                  )}
+                                  
+                                  {/* Show assignment details */}
+                                  {worker.assignmentDetails && worker.assignmentDetails.length > 0 && (
+                                    <div className="text-xs text-blue-600 mt-1">
+                                      Current assignments: {worker.assignmentDetails.length}
+                                    </div>
+                                  )}
+                                </div>
+                                
+                                <div className="text-right ml-2">
+                                  <div className={`text-xs px-2 py-1 rounded mb-1 ${
+                                    worker.availability === 'available' 
+                                      ? 'bg-green-100 text-green-800' 
+                                      : worker.availability === 'busy'
+                                        ? 'bg-yellow-100 text-yellow-800'
+                                        : 'bg-red-100 text-red-800'
+                                  }`}>
+                                    {worker.availability}
+                                  </div>
+                                  <div className="text-xs text-gray-500">
+                                    Load: {worker.currentLoad}
+                                  </div>
                                 </div>
                               </div>
-                              <div className="text-right">
-                                <div className={`text-xs px-2 py-1 rounded ${
-                                  worker.availability === 'available' 
-                                    ? 'bg-green-100 text-green-800' 
-                                    : 'bg-yellow-100 text-yellow-800'
-                                }`}>
-                                  {worker.availability}
+                              
+                              {/* Show unavailable message */}
+                              {isNotAvailable && worker.conflictInfo?.type === 'time_slot_conflict' && (
+                                <div className="text-xs text-red-600 mt-2 font-medium">
+                                  ❌ Cannot assign - Time slot {worker.conflictInfo.timeSlot} already occupied
                                 </div>
-                                <div className="text-xs text-gray-500 mt-1">
-                                  Load: {worker.currentLoad}
+                              )}
+                              
+                              {isBusy && worker.conflictInfo?.type === 'daily_limit' && (
+                                <div className="text-xs text-yellow-600 mt-2 font-medium">
+                                  ⚠️ Cannot assign - Daily capacity limit reached ({worker.conflictInfo.maxDaily} max)
                                 </div>
-                              </div>
+                              )}
+                              
+                              {worker.availability === 'available' && worker.availableTimeSlots && worker.availableTimeSlots.length > 0 && (
+                                <div className="text-xs text-green-600 mt-2">
+                                  ✓ Available slots: {worker.availableTimeSlots.length}/5
+                                </div>
+                              )}
                             </div>
-                          </div>
-                        ))
+                          );
+                        })
                       )}
                     </div>
                     {formData.assignedWorkerId && (
@@ -687,11 +816,50 @@ const AdminRequests: React.FC = () => {
                     <input
                       type="date"
                       value={formData.scheduledDate}
-                      onChange={(e) => setFormData({...formData, scheduledDate: e.target.value})}
+                      onChange={(e) => {
+                        setFormData({...formData, scheduledDate: e.target.value, assignedWorkerId: '', scheduledTimeSlot: ''});
+                        // Clear workers when date changes since time slot also needs to be selected
+                        setWorkers([]);
+                      }}
                       className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-blue-500 focus:border-blue-500"
                       min={new Date().toISOString().split('T')[0]}
                       required
                     />
+                    {formData.scheduledDate && (
+                      <p className="text-xs text-gray-500 mt-1">
+                        Worker availability will update based on selected date and time slot
+                      </p>
+                    )}
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700">
+                      Scheduled Time Slot * <span className="text-red-500">(Required for approval)</span>
+                    </label>
+                    <select
+                      value={formData.scheduledTimeSlot}
+                      onChange={(e) => {
+                        setFormData({...formData, scheduledTimeSlot: e.target.value, assignedWorkerId: ''});
+                        // Refresh workers for the new date and time slot
+                        if (formData.scheduledDate && e.target.value) {
+                          fetchWorkers(formData.scheduledDate, selectedRequest?.requestId, e.target.value);
+                        }
+                      }}
+                      className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                      required
+                    >
+                      <option value="">Select a time slot</option>
+                      <option value="08:00-10:00">08:00 - 10:00 AM</option>
+                      <option value="10:00-12:00">10:00 - 12:00 PM</option>
+                      <option value="12:00-14:00">12:00 - 02:00 PM</option>
+                      <option value="14:00-16:00">02:00 - 04:00 PM</option>
+                      <option value="16:00-18:00">04:00 - 06:00 PM</option>
+                    </select>
+                    {formData.scheduledTimeSlot && (
+                      <p className="text-xs text-blue-600 mt-1">
+                        Selected time slot: {formData.scheduledTimeSlot}
+                      </p>
+                    )}
                   </div>
                 </>
               )}
