@@ -458,6 +458,23 @@ const getAllRequests = async (req, res) => {
       filter.collectionType = req.query.collectionType;
     }
 
+    // Filter by date range if provided (Request Created From/To)
+    if (req.query.fromDate || req.query.toDate) {
+      filter.createdAt = {};
+      
+      if (req.query.fromDate) {
+        const fromDate = new Date(req.query.fromDate);
+        fromDate.setHours(0, 0, 0, 0);
+        filter.createdAt.$gte = fromDate;
+      }
+      
+      if (req.query.toDate) {
+        const toDate = new Date(req.query.toDate);
+        toDate.setHours(23, 59, 59, 999);
+        filter.createdAt.$lte = toDate;
+      }
+    }
+
     console.log('[ADMIN_REQUESTS] Fetching requests with filter:', filter);
 
     const requests = await WasteRequest.find(filter)
