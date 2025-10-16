@@ -43,8 +43,19 @@ const wasteRequestSchema = new mongoose.Schema({
       message: 'Preferred date must be today or in the future'
     }
   },
+  preferredTimeSlot: {
+    type: String,
+    enum: ['08:00-10:00', '10:00-12:00', '12:00-14:00', '14:00-16:00', '16:00-18:00'],
+    required: [true, 'Preferred time slot is required'],
+    default: '08:00-10:00'
+  },
   scheduledDate: {
     type: Date,
+    default: null
+  },
+  scheduledTimeSlot: {
+    type: String,
+    enum: ['08:00-10:00', '10:00-12:00', '12:00-14:00', '14:00-16:00', '16:00-18:00'],
     default: null
   },
   status: {
