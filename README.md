@@ -323,7 +323,7 @@ This project is licensed under the **MIT License** - see the [LICENSE](LICENSE) 
 
 ## 📞 Support
 
-For support, email: support@urban-cleanse.com or create an issue in the GitHub repository.
+For support, email: isuka1minjaya@gmail.com or create an issue in the GitHub repository.
 
 ## 🔄 Version History
 
