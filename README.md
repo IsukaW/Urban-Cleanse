@@ -335,5 +335,3 @@ For support, email: support@urban-cleanse.com or create an issue in the GitHub r
 ---
 
 **Built with ❤️ for sustainable urban waste management**
-
-UrbanCleanse is a MERN-based smart waste management app that lets users report waste issues and track pickups. Built with Express.js and TypeScript, it uses location data and analytics to optimize collection routes and promote cleaner cities.
