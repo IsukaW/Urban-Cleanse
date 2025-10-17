@@ -40,7 +40,7 @@ interface FormData {
   collectionType: string;
   binId: string;
   preferredDate: string;
-  preferredTime: string;
+  preferredTimeSlot: string;
   notes: string;
   specialDetails?: {
     itemType: string;
@@ -92,7 +92,7 @@ const RequestCollectionPage: React.FC = () => {
     collectionType: '',
     binId: '',
     preferredDate: '',
-    preferredTime: '',
+    preferredTimeSlot: '',
     notes: '',
     address: {
       street: '',
@@ -353,14 +353,12 @@ const RequestCollectionPage: React.FC = () => {
   const submitRequest = async () => {
     setLoading(true);
     try {
-      // Format the datetime properly for the backend
-      const formattedDateTime = new Date(`${formData.preferredDate}T${formData.preferredTime}:00`);
-      
       // Include location data in the request
       const requestData: CreateWasteRequestData = {
         binId: formData.binId,
         collectionType: formData.collectionType,
-        preferredDate: formattedDateTime.toISOString(),
+        preferredDate: formData.preferredDate,
+        preferredTimeSlot: formData.preferredTimeSlot,
         notes: formData.notes,
         address: formData.address,
         location: userLocation ? {
@@ -613,22 +611,23 @@ const RequestCollectionPage: React.FC = () => {
 
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-2">
-            Preferred Time
+            Preferred Time Slot
           </label>
           <select
             className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 text-sm"
-            value={formData.preferredTime}
+            value={formData.preferredTimeSlot}
             onChange={(e) => {
-              setFormData({ ...formData, preferredTime: e.target.value });
+              setFormData({ ...formData, preferredTimeSlot: e.target.value });
               // Reset availability check when time changes
               setIsScheduleAvailable(null);
             }}
           >
             <option value="">Select time slot</option>
-            <option value="08:00">8:00 AM - 10:00 AM</option>
-            <option value="10:00">10:00 AM - 12:00 PM</option>
-            <option value="14:00">2:00 PM - 4:00 PM</option>
-            <option value="16:00">4:00 PM - 6:00 PM</option>
+            <option value="08:00-10:00">08:00 - 10:00 AM</option>
+            <option value="10:00-12:00">10:00 - 12:00 PM</option>
+            <option value="12:00-14:00">12:00 - 02:00 PM</option>
+            <option value="14:00-16:00">02:00 - 04:00 PM</option>
+            <option value="16:00-18:00">04:00 - 06:00 PM</option>
           </select>
         </div>
 
@@ -719,7 +718,7 @@ const RequestCollectionPage: React.FC = () => {
           </div>
           <div className="flex justify-between">
             <span className="text-gray-600">Time:</span>
-            <span className="font-medium">{formData.preferredTime}</span>
+            <span className="font-medium">{formData.preferredTimeSlot}</span>
           </div>
           <div className="flex justify-between border-t pt-3">
             <span className="text-gray-900 font-semibold">Total Cost:</span>
@@ -1143,7 +1142,7 @@ const RequestCollectionPage: React.FC = () => {
               collectionType: '',
               binId: '',
               preferredDate: '',
-              preferredTime: '',
+              preferredTimeSlot: '',
               notes: '',
               address: { street: '', city: '', postalCode: '' }
             });
@@ -1163,7 +1162,7 @@ const RequestCollectionPage: React.FC = () => {
       case 1:
         return formData.collectionType !== '';
       case 2:
-        return formData.binId && formData.preferredDate && formData.preferredTime && isScheduleAvailable;
+        return formData.binId && formData.preferredDate && formData.preferredTimeSlot && isScheduleAvailable;
       case 3:
         return formData.address.street && formData.address.city && formData.address.postalCode && userLocation;
       case 4:
