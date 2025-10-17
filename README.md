@@ -311,7 +311,7 @@ This project is licensed under the **MIT License** - see the [LICENSE](LICENSE) 
 ## 👨‍💻 Development Team
 
 ### Lead Developer
-- **Isuka Witharanage** - *Project Lead & Backend Developer* - [@IsukaW](https://github.com/IsukaW)
+- **Isuka Witharanage** - *Project Lead & Lead Developer* - [@IsukaW](https://github.com/IsukaW)
 
 ### Core Contributors
 - **Dulakshi Nimeshani** - [@Dulakshi1910](https://github.com/Dulakshi1910)
