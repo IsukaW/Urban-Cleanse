@@ -22,9 +22,12 @@ export interface WasteRequest {
   binId: string;
   collectionType: 'food' | 'polythene' | 'paper' | 'hazardous' | 'ewaste'; // Updated to match backend
   preferredDate: string;
+  preferredTimeSlot: string;
   status: 'pending' | 'approved' | 'completed' | 'cancelled';
   cost: number;
   paymentStatus: 'pending' | 'paid' | 'failed';
+  scheduledTimeSlot?: string;
+  assignedWorker?: string;
   notes?: string;
   address?: {
     street?: string;
@@ -44,6 +47,7 @@ export interface CreateWasteRequestData {
   binId: string;
   collectionType: string;
   preferredDate: string;
+  preferredTimeSlot: string;
   notes?: string;
   address?: {
     street?: string;
