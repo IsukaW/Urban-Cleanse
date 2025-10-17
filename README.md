@@ -308,9 +308,22 @@ npm run test:e2e
 
 This project is licensed under the **MIT License** - see the [LICENSE](LICENSE) file for details.
 
-## 👨‍💻 Authors
+## 👨‍💻 Development Team
 
-- **Isuka Witharanage** - *Lead Developer* - [@IsukaW](https://github.com/IsukaW)
+### Lead Developer
+- **Isuka Witharanage** - *Project Lead & Backend Developer* - [@IsukaW](https://github.com/IsukaW)
+
+### Core Contributors
+- **Dulakshi Nimeshani** - [@Dulakshi1910](https://github.com/Dulakshi1910)
+- **Sanduni Herath** - [@SanduniHerath263](https://github.com/SanduniHerath263)
+- **Shehan Nirmal** - [@shehan570](https://github.com/shehan570)
+
+### Team Contributions
+- **Frontend Development**: React TypeScript, UI Components, User Experience
+- **Backend Development**: Node.js APIs, Database Design, Authentication
+- **System Architecture**: Time Slot Management, Notification System
+- **Testing & Quality Assurance**: Unit Tests, Integration Testing
+- **Documentation**: API Documentation, User Guides
 
 ## 🙏 Acknowledgments
 
