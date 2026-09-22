@@ -1,5 +1,8 @@
 const User = require('../models/User');
 const jwt = require('jsonwebtoken');
+const { OAuth2Client } = require('google-auth-library');
+
+const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 
 // Generate JWT token
 const generateToken = (userId) => {
@@ -40,22 +43,13 @@ const validatePasswordStrength = (password) => {
 // @access  Public
 const register = async (req, res) => {
   try {
-    const { name, email, password, role } = req.body;
+    const { name, email, password } = req.body;
 
     // Validate input
     if (!name || !email || !password) {
       return res.status(400).json({
         success: false,
         message: 'Please provide name, email, and password'
-      });
-    }
-
-    // Validate role if provided
-    const validRoles = ['user', 'admin', 'wc1', 'wc2', 'wc3'];
-    if (role && !validRoles.includes(role)) {
-      return res.status(400).json({
-        success: false,
-        message: 'Invalid role. Valid roles are: user, admin, wc1, wc2, wc3'
       });
     }
 
@@ -78,12 +72,14 @@ const register = async (req, res) => {
       });
     }
 
-    // Create user with role (defaults to 'user' if not provided)
+    // Public registration always creates a standard 'user' account.
+    // Privileged roles can only be granted via the protected admin
+    // create-user / update-user endpoints (adminOnly).
     const user = await User.create({
       name,
       email,
       password,
-      role: role || 'user'
+      role: 'user'
     });
 
     // Generate token
@@ -180,6 +176,102 @@ const login = async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Login failed',
+      error: process.env.NODE_ENV === 'development' ? error.message : {}
+    });
+  }
+};
+
+// @desc    Login / register via Google Sign-In
+// @route   POST /api/auth/google
+// @access  Public
+const googleAuth = async (req, res) => {
+  try {
+    const { credential } = req.body;
+
+    if (!credential) {
+      return res.status(400).json({
+        success: false,
+        message: 'Google credential is required'
+      });
+    }
+
+    if (!process.env.GOOGLE_CLIENT_ID) {
+      console.error('GOOGLE_CLIENT_ID is not configured');
+      return res.status(500).json({
+        success: false,
+        message: 'Google sign-in is not configured on this server'
+      });
+    }
+
+    // Verify the ID token with Google. This confirms the token was issued
+    // by Google for OUR client ID and was not tampered with, so we can
+    // trust the email/name/sub it carries without asking the client for them.
+    let payload;
+    try {
+      const ticket = await googleClient.verifyIdToken({
+        idToken: credential,
+        audience: process.env.GOOGLE_CLIENT_ID
+      });
+      payload = ticket.getPayload();
+    } catch (verifyError) {
+      console.error('Google token verification failed:', verifyError.message);
+      return res.status(401).json({
+        success: false,
+        message: 'Invalid Google credential'
+      });
+    }
+
+    if (!payload.email_verified) {
+      return res.status(401).json({
+        success: false,
+        message: 'Google account email is not verified'
+      });
+    }
+
+    const { sub: googleId, email, name } = payload;
+
+    // Match an existing account by googleId first, then by email so a user
+    // who already registered with a password can link their Google account.
+    let user = await User.findOne({ $or: [{ googleId }, { email }] });
+
+    if (user) {
+      if (!user.googleId) {
+        user.googleId = googleId;
+        await user.save();
+      }
+    } else {
+      // New sign-ins always get the standard 'user' role. Privileged roles
+      // can only be granted via the protected admin endpoints.
+      user = await User.create({
+        name,
+        email,
+        googleId,
+        role: 'user'
+      });
+    }
+
+    if (!user.isActive) {
+      return res.status(401).json({
+        success: false,
+        message: 'Account is deactivated'
+      });
+    }
+
+    const token = generateToken(user._id);
+
+    res.json({
+      success: true,
+      message: 'Google sign-in successful',
+      data: {
+        user,
+        token
+      }
+    });
+  } catch (error) {
+    console.error('Google auth error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Google sign-in failed',
       error: process.env.NODE_ENV === 'development' ? error.message : {}
     });
   }
@@ -313,6 +405,7 @@ const createUser = async (req, res) => {
 module.exports = {
   register,
   login,
+  googleAuth,
   getProfile,
   updateProfile,
   createUser

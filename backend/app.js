@@ -6,6 +6,26 @@ const connectDB = require('./config/db');
 // Load environment variables
 dotenv.config();
 
+// Refuse to start with a missing/default/weak JWT signing secret, since
+// tokens signed with a guessable secret can be forged by anyone (UC-V02).
+const KNOWN_PLACEHOLDER_SECRETS = [
+  'your_secure_secret_key_here_make_it_long_and_random_123456789',
+  'your-super-secret-jwt-key',
+  'secret',
+  'changeme'
+];
+if (
+  !process.env.JWT_SECRET ||
+  process.env.JWT_SECRET.length < 32 ||
+  KNOWN_PLACEHOLDER_SECRETS.includes(process.env.JWT_SECRET)
+) {
+  console.error(
+    'FATAL: JWT_SECRET is missing, too short, or a known placeholder value. ' +
+    'Set a strong random secret (e.g. `openssl rand -hex 64`) in your .env file.'
+  );
+  process.exit(1);
+}
+
 // Connect to database
 connectDB();
 
