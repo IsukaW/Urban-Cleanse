@@ -1,5 +1,5 @@
 const express = require('express');
-const { register, login, getProfile, updateProfile, createUser } = require('../controllers/authController');
+const { register, login, googleAuth, getProfile, updateProfile, createUser } = require('../controllers/authController');
 const { protect, adminOnly } = require('../middleware/auth');
 
 const router = express.Router();
@@ -7,6 +7,7 @@ const router = express.Router();
 // Public routes
 router.post('/register', register);
 router.post('/login', login);
+router.post('/google', googleAuth);
 
 // Protected routes
 router.get('/profile', protect, getProfile);

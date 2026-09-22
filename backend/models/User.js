@@ -27,13 +27,26 @@ const userSchema = new mongoose.Schema({
   },
   password: {
     type: String,
-    required: [true, 'Password is required'],
+    // Not required for Google-authenticated accounts (no local password set)
+    required: [
+      function() { return !this.googleId; },
+      'Password is required'
+    ],
     minlength: [8, 'Password must be at least 8 characters'],
     validate: {
-      validator: validatePassword,
+      validator: function(password) {
+        // Skip strength validation for Google-only accounts (no password set)
+        if (!password && this.googleId) return true;
+        return validatePassword(password);
+      },
       message: 'Password must contain at least 8 characters with 1 uppercase letter, 1 lowercase letter, 1 number, and 1 special character (@$!%*?&)'
     },
     select: false
+  },
+  googleId: {
+    type: String,
+    unique: true,
+    sparse: true
   },
   role: {
     type: String,
@@ -50,10 +63,10 @@ const userSchema = new mongoose.Schema({
 
 // Hash password before saving
 userSchema.pre('save', async function(next) {
-  if (!this.isModified('password')) {
+  if (!this.isModified('password') || !this.password) {
     return next();
   }
-  
+
   try {
     const salt = await bcrypt.genSalt(12);
     this.password = await bcrypt.hash(this.password, salt);
@@ -65,6 +78,8 @@ userSchema.pre('save', async function(next) {
 
 // Compare password method
 userSchema.methods.comparePassword = async function(candidatePassword) {
+  // Google-only accounts have no local password to compare against
+  if (!this.password) return false;
   return await bcrypt.compare(candidatePassword, this.password);
 };
 

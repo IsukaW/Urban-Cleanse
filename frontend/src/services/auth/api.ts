@@ -66,6 +66,29 @@ class AuthService {
     }
   }
 
+  async loginWithGoogle(credential: string): Promise<AuthResponse> {
+    try {
+      const response = await api.post('/auth/google', { credential });
+
+      if (response.data.success) {
+        localStorage.setItem('token', response.data.data.token);
+        localStorage.setItem('user', JSON.stringify(response.data.data.user));
+      }
+
+      return response.data;
+    } catch (error: any) {
+      let errorMessage = 'Google sign-in failed. Please try again.';
+
+      if (error.response?.data?.message) {
+        errorMessage = error.response.data.message;
+      } else if (error.message) {
+        errorMessage = error.message;
+      }
+
+      throw new Error(errorMessage);
+    }
+  }
+
   async getProfile(): Promise<ProfileResponse> {
     const response = await api.get('/auth/profile');
     return response.data;

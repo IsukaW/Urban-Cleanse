@@ -6,6 +6,7 @@ interface AuthContextType {
   user: User | null;
   loading: boolean;
   login: (email: string, password: string) => Promise<void>;
+  loginWithGoogle: (credential: string) => Promise<void>;
   register: (name: string, email: string, password: string, role?: string) => Promise<void>;
   logout: () => void;
   isAuthenticated: boolean;
@@ -60,6 +61,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
+  const loginWithGoogle = async (credential: string) => {
+    try {
+      const response = await authService.loginWithGoogle(credential);
+      if (response.success) {
+        setUser(response.data.user);
+      } else {
+        throw new Error(response.message || 'Google sign-in failed');
+      }
+    } catch (error: any) {
+      throw error;
+    }
+  };
+
   const register = async (name: string, email: string, password: string, role?: string) => {
     try {
       const response = await authService.register({ name, email, password, role });
@@ -83,6 +97,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     user,
     loading,
     login,
+    loginWithGoogle,
     register,
     logout,
     isAuthenticated: !!user,

@@ -4,6 +4,7 @@ import { useForm } from 'react-hook-form';
 import { useAuth } from '../contexts/AuthContext';
 import toast from 'react-hot-toast';
 import { Eye, EyeOff, Trash2 } from 'lucide-react';
+import { GoogleLogin, type CredentialResponse } from '@react-oauth/google';
 
 interface RegisterForm {
   name: string;
@@ -16,7 +17,8 @@ const Register: React.FC = () => {
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [loading, setLoading] = useState(false);
-  const { register: registerUser } = useAuth();
+  const [googleLoading, setGoogleLoading] = useState(false);
+  const { register: registerUser, loginWithGoogle } = useAuth();
   const navigate = useNavigate();
 
   const {
@@ -59,6 +61,30 @@ const Register: React.FC = () => {
       });
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleGoogleSuccess = async (credentialResponse: CredentialResponse) => {
+    if (!credentialResponse.credential) {
+      toast.error('Google sign-in did not return a credential.');
+      return;
+    }
+    setGoogleLoading(true);
+    try {
+      await loginWithGoogle(credentialResponse.credential);
+      toast.success('Welcome to UrbanCleanse!');
+      navigate('/dashboard');
+    } catch (error: any) {
+      const errorMessage = error.message || 'Google sign-in failed. Please try again.';
+      toast.error(errorMessage, {
+        duration: 8000,
+        style: {
+          background: '#ef4444',
+          color: '#fff'
+        }
+      });
+    } finally {
+      setGoogleLoading(false);
     }
   };
 
@@ -235,6 +261,27 @@ const Register: React.FC = () => {
             </button>
             </div>
           </form>
+
+          <div className="relative flex items-center py-2 mt-4 sm:mt-6">
+            <div className="flex-grow border-t border-gray-200"></div>
+            <span className="mx-3 text-xs text-gray-400 uppercase">Or</span>
+            <div className="flex-grow border-t border-gray-200"></div>
+          </div>
+
+          <div className="flex justify-center">
+            {googleLoading ? (
+              <div className="flex items-center justify-center py-2">
+                <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-green-600"></div>
+              </div>
+            ) : (
+              <GoogleLogin
+                onSuccess={handleGoogleSuccess}
+                onError={() => toast.error('Google sign-in failed. Please try again.')}
+                useOneTap={false}
+                width="320"
+              />
+            )}
+          </div>
 
           <div className="text-center mt-4 sm:mt-6 pt-4 sm:pt-6 border-t border-gray-200">
             <p className="text-sm text-gray-600">
