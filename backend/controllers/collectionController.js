@@ -5,6 +5,51 @@ const User = require('../models/User');
 const WasteRequest = require('../models/WasteRequest');
 const { createNotification } = require('./notificationController');
 
+// @desc    Verify that the authenticated worker is authorized to perform a collection operation
+//          on the given route and bin. Admins bypass assignment checks.
+// @param    req - Express request (must have req.user from protect middleware)
+// @param    binId - The bin ID from the request body
+// @param    routeId - The route ID from the request body
+// @returns  { authorized: boolean, route?: object, error?: { status, message } }
+const verifyCollectionAuthorization = async (req, binId, routeId) => {
+  const userId = req.user._id;
+  const userRole = req.user.role;
+  const isAdmin = userRole === 'admin';
+
+  // 1. Look up the route
+  const route = await Route.findOne({ routeId });
+  if (!route) {
+    return { authorized: false, error: { status: 404, message: 'Route not found' } };
+  }
+
+  // 2. If the user is a worker (not admin), verify they are assigned to this route
+  if (!isAdmin) {
+    if (route.collectorId.toString() !== userId.toString()) {
+      return {
+        authorized: false,
+        error: {
+          status: 403,
+          message: 'Not authorized to perform collection operations on this route'
+        }
+      };
+    }
+  }
+
+  // 3. Verify the bin belongs to this route
+  const binInRoute = route.bins.find(b => b.binId === binId);
+  if (!binInRoute) {
+    return {
+      authorized: false,
+      error: {
+        status: 403,
+        message: 'Bin does not belong to the specified route'
+      }
+    };
+  }
+
+  return { authorized: true, route };
+};
+
 // @desc    Get collector's assigned tasks from routes
 // @route   GET /api/collection/collectors/:id/route
 // @access  Private/Worker
@@ -245,6 +290,15 @@ const scanBinCollection = async (req, res) => {
       });
     }
     
+    // ─── Authorization: verify worker is assigned to this route and bin ───
+    const authResult = await verifyCollectionAuthorization(req, binId, routeId);
+    if (!authResult.authorized) {
+      return res.status(authResult.error.status).json({
+        success: false,
+        message: authResult.error.message
+      });
+    }
+    
     // Check for approved AND paid waste requests for this bin
     const today = new Date();
     today.setHours(0, 0, 0, 0);
@@ -389,6 +443,15 @@ const manualBinCollection = async (req, res) => {
       return res.status(400).json({
         success: false,
         message: 'Bin ID and Route ID are required'
+      });
+    }
+    
+    // ─── Authorization: verify worker is assigned to this route and bin ───
+    const authResult = await verifyCollectionAuthorization(req, binId, routeId);
+    if (!authResult.authorized) {
+      return res.status(authResult.error.status).json({
+        success: false,
+        message: authResult.error.message
       });
     }
     
@@ -537,6 +600,15 @@ const reportCollectionIssue = async (req, res) => {
       return res.status(400).json({
         success: false,
         message: 'Bin ID, Route ID, and issue type are required'
+      });
+    }
+    
+    // ─── Authorization: verify worker is assigned to this route and bin ───
+    const authResult = await verifyCollectionAuthorization(req, binId, routeId);
+    if (!authResult.authorized) {
+      return res.status(authResult.error.status).json({
+        success: false,
+        message: authResult.error.message
       });
     }
     

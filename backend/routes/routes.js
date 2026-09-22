@@ -10,7 +10,7 @@ const {
   getRouteStats,
   generateRoutePDF
 } = require('../controllers/routeController');
-const { protect, adminOnly } = require('../middleware/auth');
+const { protect, adminOnly, adminOrWorker } = require('../middleware/auth');
 
 const router = express.Router();
 
@@ -22,7 +22,7 @@ router.post('/generate-pdf', protect, adminOnly, generateRoutePDF);
 router.get('/stats', protect, adminOnly, getRouteStats);
 router.get('/', protect, getRoutes); // Allow workers to see their own routes
 router.get('/:id', protect, getRouteById); // Workers can view their assigned routes
-router.put('/:id/status', protect, updateRouteStatus); // Allow workers to update their own route status
+router.put('/:id/status', protect, adminOrWorker, updateRouteStatus); // Allow workers to update their own route status
 router.delete('/:id', protect, adminOnly, deleteRoute);
 
 module.exports = router;
