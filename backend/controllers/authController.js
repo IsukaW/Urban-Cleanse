@@ -126,8 +126,8 @@ const login = async (req, res) => {
     // Log if user was found
     console.log('User found:', user ? 'Yes' : 'No');
     
-    // Unknown email and wrong password return the same response so the
-    // login endpoint cannot be used to discover which accounts exist (UC-V06).
+    // same error for a wrong email and a wrong password, otherwise someone
+    // could use this to find out which emails are registered (V06)
     if (!user) {
       console.log('User not found with email:', email);
       return res.status(401).json({
@@ -149,8 +149,8 @@ const login = async (req, res) => {
       });
     }
 
-    // Only reveal the deactivated state once the caller has proven they
-    // know the password.
+    // moved this below the password check - only say the account is
+    // deactivated if they actually know the password
     if (!user.isActive) {
       console.log('User account is deactivated:', email);
       return res.status(401).json({
