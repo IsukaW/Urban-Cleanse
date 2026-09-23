@@ -126,20 +126,13 @@ const login = async (req, res) => {
     // Log if user was found
     console.log('User found:', user ? 'Yes' : 'No');
     
+    // Unknown email and wrong password return the same response so the
+    // login endpoint cannot be used to discover which accounts exist (UC-V06).
     if (!user) {
       console.log('User not found with email:', email);
       return res.status(401).json({
         success: false,
-        message: 'Invalid credentials - User not found'
-      });
-    }
-
-    // Check if user is active
-    if (!user.isActive) {
-      console.log('User account is deactivated:', email);
-      return res.status(401).json({
-        success: false,
-        message: 'Account is deactivated'
+        message: 'Invalid email or password'
       });
     }
 
@@ -152,7 +145,17 @@ const login = async (req, res) => {
       console.log('Invalid password for user:', email);
       return res.status(401).json({
         success: false,
-        message: 'Invalid credentials - Wrong password'
+        message: 'Invalid email or password'
+      });
+    }
+
+    // Only reveal the deactivated state once the caller has proven they
+    // know the password.
+    if (!user.isActive) {
+      console.log('User account is deactivated:', email);
+      return res.status(401).json({
+        success: false,
+        message: 'Account is deactivated'
       });
     }
 
