@@ -4,6 +4,7 @@ const User = require('../models/User');
 const WasteRequest = require('../models/WasteRequest');
 const { createNotification } = require('./notificationController');
 const pdfService = require('../services/pdfService');
+const { escapeRegex } = require('../utils/utils');
 
 // @desc    Get bins by area for route creation
 // @route   GET /api/routes/bins-by-area
@@ -821,7 +822,7 @@ const generateRoutePDF = async (req, res) => {
     }
     
     if (areaFilter && areaFilter !== 'all') {
-      filter.area = new RegExp(areaFilter, 'i');
+      filter.area = new RegExp(escapeRegex(areaFilter), 'i');
     }
     
     // Get routes for the date range
