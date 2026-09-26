@@ -2,6 +2,7 @@ const express = require('express');
 const cors = require('cors');
 const dotenv = require('dotenv');
 const connectDB = require('./config/db');
+const { securityHeaders } = require('./middleware/securityHeaders'); //V07
 
 // Load environment variables
 dotenv.config();
@@ -32,6 +33,8 @@ connectDB();
 const app = express();
 
 // Middleware
+// security headers go first so every response gets them, 404s and errors too (V07)
+app.use(securityHeaders()); //V07
 app.use(cors());
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
