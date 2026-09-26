@@ -7,6 +7,11 @@ const { securityHeaders } = require('./middleware/securityHeaders'); //V07
 // Load environment variables
 dotenv.config();
 
+const allowedOrigins = (process.env.CORS_ORIGINS || 'http://localhost:5173')
+  .split(',')
+  .map(origin => origin.trim())
+  .filter(Boolean);
+
 // Refuse to start with a missing/default/weak JWT signing secret, since
 // tokens signed with a guessable secret can be forged by anyone (UC-V02).
 const KNOWN_PLACEHOLDER_SECRETS = [
@@ -35,7 +40,16 @@ const app = express();
 // Middleware
 // security headers go first so every response gets them, 404s and errors too (V07)
 app.use(securityHeaders()); //V07
-app.use(cors());
+app.use(cors({
+  credentials: false,
+  origin: (origin, callback) => {
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error('Origin not allowed by CORS'));
+    }
+  }
+}));
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
 

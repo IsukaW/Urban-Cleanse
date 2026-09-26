@@ -1,6 +1,7 @@
 const User = require('../models/User');
 const Bin = require('../models/Bin');
 const WasteRequest = require('../models/WasteRequest');
+const { escapeRegex } = require('../utils/utils');
 
 // @desc    Get all users (admin only)
 // @route   GET /api/users
@@ -26,9 +27,10 @@ const getAllUsers = async (req, res) => {
 
     // Search by name or email if provided
     if (req.query.search) {
+      const search = escapeRegex(req.query.search);
       filter.$or = [
-        { name: { $regex: req.query.search, $options: 'i' } },
-        { email: { $regex: req.query.search, $options: 'i' } }
+        { name: { $regex: search, $options: 'i' } },
+        { email: { $regex: search, $options: 'i' } }
       ];
     }
 
