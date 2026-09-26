@@ -450,7 +450,7 @@ const getRoutes = async (req, res) => {
 
 // @desc    Get single route details
 // @route   GET /api/routes/:id
-// @access  Private
+// @access  Private (Admin or assigned Worker only)
 const getRouteById = async (req, res) => {
   try {
     const { id } = req.params;
@@ -467,6 +467,18 @@ const getRouteById = async (req, res) => {
       return res.status(404).json({
         success: false,
         message: 'Route not found'
+      });
+    }
+    
+    // Authorization: only admin or the assigned worker may view route details
+    const isAdmin = req.user.role === 'admin';
+    const isAssignedWorker = route.collectorId &&
+      route.collectorId._id.toString() === req.user._id.toString();
+    
+    if (!isAdmin && !isAssignedWorker) {
+      return res.status(403).json({
+        success: false,
+        message: 'Not authorized to view this route'
       });
     }
     

@@ -12,9 +12,9 @@ const router = express.Router();
 
 // Worker routes - Allow all authenticated users to access collection routes
 router.get('/collectors/:id/route', protect, getCollectorRoute);
-router.post('/scan', protect, scanBinCollection);
-router.post('/manual', protect, manualBinCollection);
-router.post('/report-issue', protect, reportCollectionIssue);
+router.post('/scan', protect, adminOrWorker, scanBinCollection);
+router.post('/manual', protect, adminOrWorker, manualBinCollection);
+router.post('/report-issue', protect, adminOrWorker, reportCollectionIssue);
 router.get('/history', protect, getCollectionHistory);
 
 module.exports = router;
