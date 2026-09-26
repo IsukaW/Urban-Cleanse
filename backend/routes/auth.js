@@ -1,12 +1,13 @@
 const express = require('express');
 const { register, login, googleAuth, getProfile, updateProfile, createUser } = require('../controllers/authController');
 const { protect, adminOnly } = require('../middleware/auth');
+const { loginLimiter } = require('../middleware/rateLimiter');
 
 const router = express.Router();
 
 // Public routes
 router.post('/register', register);
-router.post('/login', login);
+router.post('/login', loginLimiter, login);
 router.post('/google', googleAuth);
 
 // Protected routes
