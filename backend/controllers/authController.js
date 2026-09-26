@@ -126,20 +126,13 @@ const login = async (req, res) => {
     // Log if user was found
     console.log('User found:', user ? 'Yes' : 'No');
     
+    // same error for a wrong email and a wrong password, otherwise someone
+    // could use this to find out which emails are registered (V06)
     if (!user) {
       console.log('User not found with email:', email);
       return res.status(401).json({
         success: false,
-        message: 'Invalid credentials - User not found'
-      });
-    }
-
-    // Check if user is active
-    if (!user.isActive) {
-      console.log('User account is deactivated:', email);
-      return res.status(401).json({
-        success: false,
-        message: 'Account is deactivated'
+        message: 'Invalid email or password'
       });
     }
 
@@ -152,7 +145,17 @@ const login = async (req, res) => {
       console.log('Invalid password for user:', email);
       return res.status(401).json({
         success: false,
-        message: 'Invalid credentials - Wrong password'
+        message: 'Invalid email or password'
+      });
+    }
+
+    // moved this below the password check - only say the account is
+    // deactivated if they actually know the password
+    if (!user.isActive) {
+      console.log('User account is deactivated:', email);
+      return res.status(401).json({
+        success: false,
+        message: 'Account is deactivated'
       });
     }
 
