@@ -834,6 +834,8 @@ const generateRoutePDF = async (req, res) => {
     }
     
     if (areaFilter && areaFilter !== 'all') {
+      // UC-V05: escape the area filter before building the RegExp so user
+      // input is matched literally and cannot inject a malicious pattern
       filter.area = new RegExp(escapeRegex(areaFilter), 'i');
     }
     

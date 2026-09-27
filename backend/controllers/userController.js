@@ -26,6 +26,8 @@ const getAllUsers = async (req, res) => {
     }
 
     // Search by name or email if provided
+    // UC-V05: escape the search term before it goes into $regex so user input
+    // is matched literally and cannot inject a malicious/ReDoS pattern
     if (req.query.search) {
       const search = escapeRegex(req.query.search);
       filter.$or = [
