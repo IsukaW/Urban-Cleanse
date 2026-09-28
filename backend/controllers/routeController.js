@@ -4,7 +4,7 @@ const User = require('../models/User');
 const WasteRequest = require('../models/WasteRequest');
 const { createNotification } = require('./notificationController');
 const pdfService = require('../services/pdfService');
-const { escapeRegex } = require('../utils/utils');
+const { sanitizeSearchTerm, SEARCH_QUERY_TIMEOUT_MS } = require('../utils/utils');
 
 // @desc    Get bins by area for route creation
 // @route   GET /api/routes/bins-by-area
@@ -408,9 +408,11 @@ const getRoutes = async (req, res) => {
       .populate('collectorId', 'name email role')
       .sort({ assignedDate: -1, createdAt: -1 })
       .skip(skip)
+      .maxTimeMS(SEARCH_QUERY_TIMEOUT_MS) // UC-V05: cap query time
       .limit(parseInt(limit));
     
-    const total = await Route.countDocuments(filter);
+    const total = await Route.countDocuments(filter)
+      .maxTimeMS(SEARCH_QUERY_TIMEOUT_MS); // UC-V05: same timeout for the count query
     
     // Get summary statistics
     const stats = await Route.aggregate([
@@ -834,15 +836,18 @@ const generateRoutePDF = async (req, res) => {
     }
     
     if (areaFilter && areaFilter !== 'all') {
-      // UC-V05: escape the area filter before building the RegExp so user
-      // input is matched literally and cannot inject a malicious pattern
-      filter.area = new RegExp(escapeRegex(areaFilter), 'i');
+      // UC-V05: sanitize the area filter before building the RegExp - enforces
+      // a maximum input length and allowed characters, then escapes
+      // metacharacters so user input is matched literally and cannot inject a
+      // malicious pattern
+      filter.area = new RegExp(sanitizeSearchTerm(areaFilter), 'i');
     }
     
     // Get routes for the date range
     const routes = await Route.find(filter)
       .populate('collectorId', 'name email role')
-      .sort({ assignedDate: -1, createdAt: -1 });
+      .sort({ assignedDate: -1, createdAt: -1 })
+      .maxTimeMS(SEARCH_QUERY_TIMEOUT_MS); // UC-V05: cap query time
     
     // Calculate comprehensive statistics
     const stats = {
@@ -947,7 +952,8 @@ const generateRoutePDF = async (req, res) => {
     res.send(pdfBuffer);
   } catch (error) {
     console.error('[PDF] Error generating PDF report:', error);
-    res.status(500).json({
+    // UC-V05: sanitiser rejects bad filter input with statusCode 400
+    res.status(error.statusCode || 500).json({
       success: false,
       message: 'Failed to generate PDF report',
       error: process.env.NODE_ENV === 'development' ? error.message : {}

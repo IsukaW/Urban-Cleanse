@@ -1,7 +1,7 @@
 const User = require('../models/User');
 const Bin = require('../models/Bin');
 const WasteRequest = require('../models/WasteRequest');
-const { escapeRegex } = require('../utils/utils');
+const { sanitizeSearchTerm, SEARCH_QUERY_TIMEOUT_MS } = require('../utils/utils');
 
 // @desc    Get all users (admin only)
 // @route   GET /api/users
@@ -26,10 +26,12 @@ const getAllUsers = async (req, res) => {
     }
 
     // Search by name or email if provided
-    // UC-V05: escape the search term before it goes into $regex so user input
-    // is matched literally and cannot inject a malicious/ReDoS pattern
+    // UC-V05: sanitize the search term before it goes into $regex - this
+    // enforces a maximum input length and an allowed character set, then
+    // escapes metacharacters so user input is matched literally and cannot
+    // inject a malicious/ReDoS pattern into the query
     if (req.query.search) {
-      const search = escapeRegex(req.query.search);
+      const search = sanitizeSearchTerm(req.query.search);
       filter.$or = [
         { name: { $regex: search, $options: 'i' } },
         { email: { $regex: search, $options: 'i' } }
@@ -40,9 +42,11 @@ const getAllUsers = async (req, res) => {
       .select('-password')
       .sort({ createdAt: -1 })
       .skip(skip)
+      .maxTimeMS(SEARCH_QUERY_TIMEOUT_MS) // UC-V05: cap query time so a crafted filter cannot stall the server
       .limit(limit);
 
-    const total = await User.countDocuments(filter);
+    const total = await User.countDocuments(filter)
+      .maxTimeMS(SEARCH_QUERY_TIMEOUT_MS); // UC-V05: same timeout for the count query
 
     res.json({
       success: true,
@@ -55,7 +59,8 @@ const getAllUsers = async (req, res) => {
       }
     });
   } catch (error) {
-    res.status(500).json({ 
+    // UC-V05: sanitiser rejects bad search input with statusCode 400
+    res.status(error.statusCode || 500).json({ 
       success: false,
       message: 'Server error', 
       error: process.env.NODE_ENV === 'development' ? error.message : {}

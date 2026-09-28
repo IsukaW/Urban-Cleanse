@@ -4,7 +4,7 @@
 const { describe, test } = require('node:test');
 const assert = require('node:assert/strict');
 
-const { escapeRegex } = require('../utils/utils');
+const { escapeRegex, sanitizeSearchTerm, MAX_SEARCH_LENGTH } = require('../utils/utils');
 const User = require('../models/User');
 const { getAllUsers } = require('../controllers/userController');
 
@@ -46,13 +46,14 @@ describe('user search query is escaped before hitting $regex (UC-V05)', () => {
       select: () => chain,
       sort: () => chain,
       skip: () => chain,
+      maxTimeMS: () => chain,
       limit: async () => []
     };
     t.mock.method(User, 'find', (filter) => {
       capturedFilter = filter;
       return chain;
     });
-    t.mock.method(User, 'countDocuments', async () => 0);
+    t.mock.method(User, 'countDocuments', () => ({ maxTimeMS: async () => 0 }));
 
     const req = { query: { search } };
     const res = { status: () => res, json: () => {} };
@@ -76,12 +77,87 @@ describe('user search query is escaped before hitting $regex (UC-V05)', () => {
     assert.equal(emailPattern.test('admin@test.com'), false);
     assert.equal(emailPattern.test('.*'), true);
   });
+});
 
-  test('normal search terms are still matched case-insensitively', async (t) => {
-    const filter = await captureSearchFilter(t, 'John');
+describe('sanitizeSearchTerm enforces input limits before escaping (UC-V05)', () => {
+  test('still escapes regex metacharacters like escapeRegex', () => {
+    assert.equal(sanitizeSearchTerm('a.b'), 'a\\.b');
+    assert.equal(sanitizeSearchTerm('(.*)+'), escapeRegex('(.*)+'));
+  });
 
-    const namePattern = new RegExp(filter.$or[0].name.$regex, filter.$or[0].name.$options);
-    assert.equal(namePattern.test('john smith'), true);
-    assert.equal(namePattern.test('JOHN SMITH'), true);
+  test('input at the maximum length is accepted', () => {
+    const exact = 'a'.repeat(MAX_SEARCH_LENGTH);
+    assert.equal(sanitizeSearchTerm(exact), exact);
+  });
+
+  test('input over the maximum length is rejected with statusCode 400', () => {
+    const tooLong = 'a'.repeat(MAX_SEARCH_LENGTH + 1);
+    assert.throws(
+      () => sanitizeSearchTerm(tooLong),
+      (err) => err.statusCode === 400,
+      'over-long input must be rejected'
+    );
+  });
+
+  test('control, null-byte and zero-width characters are rejected with statusCode 400', () => {
+    const badInputs = ['a\u0000b', 'a\u001Fb', 'a\u007Fb', '\u200Badmin', 'admin\u202Etxt.exe'];
+    for (const input of badInputs) {
+      assert.throws(
+        () => sanitizeSearchTerm(input),
+        (err) => err.statusCode === 400,
+        `input ${JSON.stringify(input)} must be rejected`
+      );
+    }
+  });
+
+  test('normal names, emails and unicode text pass through', () => {
+    assert.doesNotThrow(() => sanitizeSearchTerm("o'brien@company.lk"));
+    assert.doesNotThrow(() => sanitizeSearchTerm('Ñandú (Pvt) Ltd'));
+    assert.doesNotThrow(() => sanitizeSearchTerm('කොළඹ'));
+    assert.equal(sanitizeSearchTerm(''), '');
+    // literal matching is preserved: a cleaned dot only matches a real dot
+    const pattern = new RegExp(sanitizeSearchTerm('a.b'), 'i');
+    assert.equal(pattern.test('a.b'), true);
+    assert.equal(pattern.test('axb'), false);
+  });
+});
+
+describe('user search rejects bad input with 400 instead of querying (UC-V05)', () => {
+  const invokeGetAllUsers = async (t, search) => {
+    const chain = {
+      select: () => chain,
+      sort: () => chain,
+      skip: () => chain,
+      maxTimeMS: () => chain,
+      limit: async () => []
+    };
+    t.mock.method(User, 'find', () => chain);
+    t.mock.method(User, 'countDocuments', () => ({ maxTimeMS: async () => 0 }));
+
+    let statusCode = 200;
+    let body;
+    const req = { query: { search } };
+    const res = {
+      status: (code) => { statusCode = code; return res; },
+      json: (payload) => { body = payload; }
+    };
+    await getAllUsers(req, res);
+    return { statusCode, body };
+  };
+
+  test('over-long search terms get a 400, not a 500', async (t) => {
+    const { statusCode, body } = await invokeGetAllUsers(t, 'a'.repeat(200));
+    assert.equal(statusCode, 400);
+    assert.equal(body.success, false);
+  });
+
+  test('null-byte search terms get a 400', async (t) => {
+    const { statusCode } = await invokeGetAllUsers(t, 'admin\u0000');
+    assert.equal(statusCode, 400);
+  });
+
+  test('valid search terms still reach the query and succeed', async (t) => {
+    const { statusCode } = await invokeGetAllUsers(t, '.*');
+    assert.equal(statusCode, 200);
   });
 });
